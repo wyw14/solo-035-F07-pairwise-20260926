@@ -40,6 +40,7 @@ func (runtime *Runtime) Diagnostics() DiagnosticReport {
 		runtime.checkPlayout(now),
 		runtime.checkJournal(now),
 		runtime.checkInterlocks(now),
+		runtime.checkHandovers(now),
 	}
 	sort.Slice(checks, func(i, j int) bool { return checks[i].Name < checks[j].Name })
 	report := DiagnosticReport{Healthy: true, Checks: checks, CheckedAt: now}
@@ -214,5 +215,57 @@ func (runtime *Runtime) checkInterlocks(now time.Time) DiagnosticCheck {
 		}
 	}
 	check.Detail = fmt.Sprintf("%d interlock observations match active event state", len(interlocks))
+	return check
+}
+
+func (runtime *Runtime) checkHandovers(now time.Time) DiagnosticCheck {
+	check := DiagnosticCheck{Name: "event-handovers", Passed: true, CheckedAt: now}
+	handovers := runtime.HandoverFlow.List()
+	pending := 0
+	expectedPreview := make(map[model.EventID]bool)
+	var latestCompleted model.EventID
+	for _, handover := range handovers {
+		switch handover.Status {
+		case "previewing":
+			pending++
+			expectedPreview[handover.Incoming] = true
+			if runtime.Mux.OnAirEvent() != handover.Outgoing {
+				check.Passed = false
+				check.Detail = fmt.Sprintf("pending handover %s lost its outgoing output", handover.Token)
+				return check
+			}
+		case "aborted":
+			// The cut never happened: the incoming session stays under director
+			// preview awaiting a later attempt, while the outgoing session kept air.
+			expectedPreview[handover.Incoming] = true
+		case "on-air":
+			latestCompleted = handover.Incoming
+		}
+	}
+	actualPreview := make(map[model.EventID]bool)
+	for _, eventID := range runtime.Mux.Previews() {
+		actualPreview[eventID] = true
+	}
+	for eventID := range expectedPreview {
+		if !actualPreview[eventID] {
+			check.Passed = false
+			check.Detail = fmt.Sprintf("incoming session %s lost its director preview", eventID)
+			return check
+		}
+	}
+	for eventID := range actualPreview {
+		if !expectedPreview[eventID] {
+			check.Passed = false
+			check.Detail = fmt.Sprintf("session %s holds an orphan preview", eventID)
+			return check
+		}
+	}
+	if latestCompleted != "" && runtime.Mux.OnAirEvent() != latestCompleted && pending == 0 {
+		// A later pending handover may legitimately be about to move the output.
+		check.Passed = false
+		check.Detail = fmt.Sprintf("latest completed handover expected %s on air", latestCompleted)
+		return check
+	}
+	check.Detail = fmt.Sprintf("%d handovers recorded, %d awaiting their takeover instant", len(handovers), pending)
 	return check
 }

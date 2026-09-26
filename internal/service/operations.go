@@ -9,6 +9,7 @@ import (
 
 func (runtime *Runtime) Snapshot() model.RuntimeSnapshot {
 	snapshot := model.RuntimeSnapshot{CapturedAt: runtime.Clock().UTC()}
+	onAir := runtime.Mux.OnAirEvent()
 	for _, event := range runtime.Events.List() {
 		snapshot.Operations = append(snapshot.Operations, model.OperationView{
 			EventID:          event.ID,
@@ -17,6 +18,8 @@ func (runtime *Runtime) Snapshot() model.RuntimeSnapshot {
 			ProgramRevision:  event.Revision,
 			SourceGeneration: event.SourceGeneration,
 			CommandEpoch:     event.CommandEpoch,
+			Preview:          runtime.Mux.Previewing(event.ID),
+			OnAir:            onAir == event.ID,
 		})
 		status, synced := runtime.Sync.Status(event.ID)
 		snapshot.Interlocks = append(snapshot.Interlocks, model.InterlockView{EventID: event.ID, Name: "frame-sync", Passed: synced && status.Stable, Detail: status.Reason})
@@ -41,6 +44,16 @@ func (runtime *Runtime) Snapshot() model.RuntimeSnapshot {
 		}
 		return snapshot.Interlocks[i].EventID < snapshot.Interlocks[j].EventID
 	})
+	for _, handover := range runtime.HandoverFlow.List() {
+		snapshot.Handovers = append(snapshot.Handovers, model.HandoverView{
+			Token:      handover.Token,
+			Outgoing:   handover.Outgoing,
+			Incoming:   handover.Incoming,
+			TakeoverAt: handover.TakeoverAt,
+			Status:     string(handover.Status),
+			Reason:     handover.Reason,
+		})
+	}
 	return snapshot
 }
 

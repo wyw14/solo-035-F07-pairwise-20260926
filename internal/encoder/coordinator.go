@@ -39,6 +39,14 @@ func (coordinator *Coordinator) Equipment() []Resource {
 	return coordinator.state.List()
 }
 
+func (coordinator *Coordinator) LeaseFor(owner model.EventID) (model.EncoderLease, bool) {
+	return coordinator.state.LeaseFor(owner)
+}
+
+func (coordinator *Coordinator) LeaseByID(id model.LeaseID) (model.EncoderLease, bool) {
+	return coordinator.state.LeaseByID(id)
+}
+
 func (coordinator *Coordinator) SetHealth(id string, healthy bool) bool {
 	return coordinator.state.SetHealth(id, healthy)
 }

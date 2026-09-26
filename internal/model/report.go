@@ -9,6 +9,17 @@ type OperationView struct {
 	ProgramRevision  RevisionID `json:"program_revision"`
 	SourceGeneration uint64     `json:"source_generation"`
 	CommandEpoch     uint64     `json:"command_epoch"`
+	Preview          bool       `json:"preview"`
+	OnAir            bool       `json:"on_air"`
+}
+
+type HandoverView struct {
+	Token      CommandID `json:"token"`
+	Outgoing   EventID   `json:"outgoing_event_id"`
+	Incoming   EventID   `json:"incoming_event_id"`
+	TakeoverAt time.Time `json:"takeover_at"`
+	Status     string    `json:"status"`
+	Reason     string    `json:"reason,omitempty"`
 }
 
 type EquipmentView struct {
@@ -40,6 +51,7 @@ type RuntimeSnapshot struct {
 	Equipment  []EquipmentView `json:"equipment"`
 	Interlocks []InterlockView `json:"interlocks"`
 	Incidents  []IncidentView  `json:"incidents"`
+	Handovers  []HandoverView  `json:"handovers"`
 }
 
 func (snapshot RuntimeSnapshot) Healthy() bool {

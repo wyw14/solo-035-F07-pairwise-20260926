@@ -10,15 +10,17 @@ import (
 )
 
 type ControlRequest struct {
-	Action      string `json:"action"`
-	EventID     string `json:"event_id"`
-	SourceID    string `json:"source_id"`
-	EncoderID   string `json:"encoder_id"`
-	Healthy     bool   `json:"healthy"`
-	Bitrate     int    `json:"bitrate"`
-	Count       int64  `json:"count"`
-	Message     string `json:"message"`
-	DelayMillis int64  `json:"delay_millis"`
+	Action          string `json:"action"`
+	EventID         string `json:"event_id"`
+	IncomingEventID string `json:"incoming_event_id"`
+	HandoverToken   string `json:"handover_token"`
+	SourceID        string `json:"source_id"`
+	EncoderID       string `json:"encoder_id"`
+	Healthy         bool   `json:"healthy"`
+	Bitrate         int    `json:"bitrate"`
+	Count           int64  `json:"count"`
+	Message         string `json:"message"`
+	DelayMillis     int64  `json:"delay_millis"`
 }
 
 type ControlResult struct {
@@ -140,6 +142,56 @@ func (runtime *Runtime) ExecuteControl(ctx context.Context, request ControlReque
 			return model.NewSourceID()
 		})
 		result.Value = report
+		return result, err
+	case "stage-program":
+		stageSource := sourceID
+		if !stageSource.Valid() {
+			stageSource = model.NewSourceID()
+		}
+		if err := coordinator.ConfigureProgramPreview(eventID, stageSource); err != nil {
+			return result, err
+		}
+		result.Value = map[string]any{"event_id": eventID, "source": stageSource}
+		return result, nil
+	case "rehearse-incoming":
+		rehearsalSource := sourceID
+		if !rehearsalSource.Valid() {
+			rehearsalSource = model.NewSourceID()
+		}
+		if err := coordinator.RehearseIncoming(eventID, rehearsalSource); err != nil {
+			return result, err
+		}
+		result.Value = map[string]any{"event_id": eventID, "source": rehearsalSource}
+		return result, nil
+	case "prepare-handover":
+		incomingID := model.EventID(request.IncomingEventID)
+		if !incomingID.Valid() {
+			return result, fmt.Errorf("incoming_event_id is required for a handover")
+		}
+		value, err := coordinator.PrepareHandover(eventID, incomingID, time.Duration(request.DelayMillis)*time.Millisecond)
+		result.Value = value
+		return result, err
+	case "execute-handover":
+		token := model.CommandID(request.HandoverToken)
+		value, err := coordinator.ExecuteHandover(token)
+		result.Value = value
+		return result, err
+	case "schedule-handover":
+		token := model.CommandID(request.HandoverToken)
+		worker, err := coordinator.ScheduleHandover(ctx, token)
+		if err != nil {
+			return result, err
+		}
+		if err := <-worker; err != nil {
+			return result, err
+		}
+		value, _ := runtime.HandoverFlow.Get(token)
+		result.Value = value
+		return result, nil
+	case "cancel-handover":
+		token := model.CommandID(request.HandoverToken)
+		value, err := coordinator.CancelHandover(token)
+		result.Value = value
 		return result, err
 	default:
 		return result, fmt.Errorf("unsupported control action %q", request.Action)

@@ -58,6 +58,53 @@ func (state *State) Publish(eventID model.EventID, revision model.RevisionID, fe
 	return nil
 }
 
+// PublishAndRetire performs the controlled cut inside the playout plane: the
+// incoming staged generation goes on air while the outgoing session drops its
+// output in the same critical section, so no instant exists with neither or
+// both sessions driving the output.
+func (state *State) PublishAndRetire(incoming model.EventID, revision model.RevisionID, fence uint64, outgoing model.EventID, now time.Time) error {
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	next, ok := state.outputs[incoming]
+	if !ok || next.Revision != revision || next.Fence != fence || next.OnAir {
+		return fmt.Errorf("incoming playout generation is not staged for the cut")
+	}
+	previous, hadPrevious := state.outputs[outgoing]
+	if outgoing.Valid() && (!hadPrevious || !previous.OnAir) {
+		return fmt.Errorf("outgoing session is not holding the playout output")
+	}
+	next.OnAir = true
+	next.UpdatedAt = now.UTC()
+	state.outputs[incoming] = next
+	state.trace[incoming] = append(state.trace[incoming], "published:"+next.Segment)
+	if hadPrevious {
+		previous.OnAir = false
+		previous.UpdatedAt = now.UTC()
+		state.outputs[outgoing] = previous
+		state.trace[outgoing] = append(state.trace[outgoing], "retired:"+next.Segment)
+	}
+	return nil
+}
+
+// RevertCut restores the outgoing output after a failed cut, returning the
+// incoming generation to its staged (not on air) state.
+func (state *State) RevertCut(incoming, outgoing model.EventID, now time.Time) {
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	if next, ok := state.outputs[incoming]; ok && next.OnAir {
+		next.OnAir = false
+		next.UpdatedAt = now.UTC()
+		state.outputs[incoming] = next
+		state.trace[incoming] = append(state.trace[incoming], "cut-reverted")
+	}
+	if previous, ok := state.outputs[outgoing]; ok && !previous.OnAir {
+		previous.OnAir = true
+		previous.UpdatedAt = now.UTC()
+		state.outputs[outgoing] = previous
+		state.trace[outgoing] = append(state.trace[outgoing], "output-restored")
+	}
+}
+
 func (state *State) Stop(eventID model.EventID, now time.Time) {
 	state.mu.Lock()
 	defer state.mu.Unlock()

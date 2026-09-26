@@ -14,17 +14,21 @@ type Cue struct {
 }
 
 type Continuity struct {
-	mu   sync.Mutex
-	last map[model.EventID]Cue
+	mu      sync.Mutex
+	last    map[model.EventID]Cue
+	retired map[model.EventID]bool
 }
 
 func NewContinuity() *Continuity {
-	return &Continuity{last: make(map[model.EventID]Cue)}
+	return &Continuity{last: make(map[model.EventID]Cue), retired: make(map[model.EventID]bool)}
 }
 
 func (continuity *Continuity) Accept(eventID model.EventID, cue Cue) error {
 	continuity.mu.Lock()
 	defer continuity.mu.Unlock()
+	if continuity.retired[eventID] {
+		return fmt.Errorf("caption continuity for event %s is retired", eventID)
+	}
 	previous, ok := continuity.last[eventID]
 	if ok && previous.Revision == cue.Revision && cue.Sequence != previous.Sequence+1 {
 		return fmt.Errorf("caption cue sequence is discontinuous")
@@ -37,6 +41,20 @@ func (continuity *Continuity) Accept(eventID model.EventID, cue Cue) error {
 	}
 	continuity.last[eventID] = cue
 	return nil
+}
+
+// Retire freezes an outgoing event's continuity ledger so cues observed after
+// the handover cannot be attributed to the finished session.
+func (continuity *Continuity) Retire(eventID model.EventID) {
+	continuity.mu.Lock()
+	defer continuity.mu.Unlock()
+	continuity.retired[eventID] = true
+}
+
+func (continuity *Continuity) Retired(eventID model.EventID) bool {
+	continuity.mu.Lock()
+	defer continuity.mu.Unlock()
+	return continuity.retired[eventID]
 }
 
 func (continuity *Continuity) Last(eventID model.EventID) (Cue, bool) {

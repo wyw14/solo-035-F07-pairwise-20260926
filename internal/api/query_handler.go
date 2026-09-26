@@ -37,3 +37,7 @@ func (server *Server) incidents(writer http.ResponseWriter, request *http.Reques
 func (server *Server) snapshot(writer http.ResponseWriter, request *http.Request) {
 	writeJSON(writer, http.StatusOK, server.runtime.Snapshot())
 }
+
+func (server *Server) handovers(writer http.ResponseWriter, request *http.Request) {
+	writeJSON(writer, http.StatusOK, map[string]any{"handovers": server.runtime.Handovers()})
+}

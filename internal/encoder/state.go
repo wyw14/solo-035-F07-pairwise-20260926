@@ -57,6 +57,32 @@ func (state *State) Owner(id string) model.EventID {
 	return state.resources[id].Lease.Owner
 }
 
+// LeaseFor returns the live lease currently held by an event, if any. It lets a
+// handover release the outgoing session's encoder once the cut has completed.
+func (state *State) LeaseFor(owner model.EventID) (model.EncoderLease, bool) {
+	state.mu.RLock()
+	defer state.mu.RUnlock()
+	for _, resource := range state.resources {
+		if resource.Lease.Owner == owner && resource.Lease.ID != "" {
+			return resource.Lease, true
+		}
+	}
+	return model.EncoderLease{}, false
+}
+
+// LeaseByID resolves a committed lease identifier back to its current live
+// lease, including its fencing value. Returns false once it has been released.
+func (state *State) LeaseByID(id model.LeaseID) (model.EncoderLease, bool) {
+	state.mu.RLock()
+	defer state.mu.RUnlock()
+	for _, resource := range state.resources {
+		if resource.Lease.ID == id && id != "" && resource.Lease.Owner != "" {
+			return resource.Lease, true
+		}
+	}
+	return model.EncoderLease{}, false
+}
+
 func (state *State) nextFence(id string) uint64 {
 	state.fences[id]++
 	return state.fences[id]

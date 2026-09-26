@@ -47,3 +47,13 @@ func (coordinator *Coordinator) Ready(eventID model.EventID, revision model.Revi
 func (coordinator *Coordinator) Snapshot() []model.CaptionStatus {
 	return coordinator.state.List()
 }
+
+// Retire closes an outgoing event's caption chain after a successful handover.
+func (coordinator *Coordinator) Retire(eventID model.EventID) {
+	coordinator.state.Retire(eventID, coordinator.clock())
+}
+
+func (coordinator *Coordinator) Retired(eventID model.EventID) bool {
+	_, ok := coordinator.state.RetiredAt(eventID)
+	return ok
+}

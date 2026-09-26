@@ -10,6 +10,7 @@ import (
 	"github.com/wyw14/solo-035/internal/caption"
 	"github.com/wyw14/solo-035/internal/encoder"
 	"github.com/wyw14/solo-035/internal/event"
+	"github.com/wyw14/solo-035/internal/handoff"
 	"github.com/wyw14/solo-035/internal/journal"
 	"github.com/wyw14/solo-035/internal/mux"
 	"github.com/wyw14/solo-035/internal/playout"
@@ -47,6 +48,8 @@ type Runtime struct {
 	Playout         *playout.Coordinator
 	PlayoutFlow     *playout.Integration
 	PlayoutRecovery *playout.Recovery
+	Handoffs        *handoff.State
+	HandoverFlow    *handoff.Coordinator
 	BackupState     *backup.State
 	Backup          *backup.Coordinator
 }
@@ -95,6 +98,20 @@ func NewRuntime(dataDirectory string, clock func() time.Time) (*Runtime, error) 
 	runtime.Playout = playout.NewCoordinator(runtime.PlayoutState, runtime.Journal, clock)
 	runtime.PlayoutFlow = playout.NewIntegration(runtime.PlayoutState)
 	runtime.PlayoutRecovery = playout.NewRecovery(runtime.PlayoutState, clock)
+	runtime.Handoffs = handoff.NewState()
+	runtime.HandoverFlow = handoff.NewCoordinator(
+		runtime.Handoffs,
+		runtime.Events,
+		runtime.EventFlow,
+		runtime.Mux,
+		runtime.Playout,
+		runtime.EncoderFlow,
+		runtime.CaptionFlow,
+		runtime.Continuity,
+		runtime.Sync,
+		runtime.Quality,
+		clock,
+	)
 	runtime.BackupState = backup.NewState()
 	runtime.Backup = backup.NewCoordinator(runtime.BackupState, runtime.Audio, runtime.EncoderFlow, runtime.PlayoutFlow, clock)
 	if runtime.Backup == nil {

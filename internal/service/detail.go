@@ -4,6 +4,7 @@ import (
 	"github.com/wyw14/solo-035/internal/audio"
 	"github.com/wyw14/solo-035/internal/backup"
 	"github.com/wyw14/solo-035/internal/caption"
+	"github.com/wyw14/solo-035/internal/handoff"
 	"github.com/wyw14/solo-035/internal/model"
 	"github.com/wyw14/solo-035/internal/mux"
 )
@@ -19,6 +20,7 @@ type EventDetail struct {
 	Audio        *audio.PathState      `json:"audio,omitempty"`
 	Caption      *caption.Cue          `json:"caption,omitempty"`
 	Failover     *backup.FailoverState `json:"failover,omitempty"`
+	Handover     *handoff.Handover     `json:"handover,omitempty"`
 	PlayoutTrace []string              `json:"playout_trace"`
 	WorkerActive bool                  `json:"worker_active"`
 }
@@ -54,6 +56,11 @@ func (runtime *Runtime) Detail() OperationalDetail {
 		}
 		if failover, ok := runtime.Backup.Status(item.ID); ok {
 			eventDetail.Failover = &failover
+		}
+		if hand, ok := runtime.Handoffs.PendingFor(item.ID); ok {
+			eventDetail.Handover = &hand
+		} else if hand, ok := runtime.Handoffs.PendingForIncoming(item.ID); ok {
+			eventDetail.Handover = &hand
 		}
 		detail.Events = append(detail.Events, eventDetail)
 	}

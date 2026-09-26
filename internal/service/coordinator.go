@@ -68,6 +68,17 @@ func (coordinator *Coordinator) PushFrame(eventID model.EventID, frame model.Fra
 }
 
 func (coordinator *Coordinator) ConfigureProgram(eventID model.EventID, sourceID model.SourceID) error {
+	return coordinator.configureProgram(eventID, sourceID, true)
+}
+
+// ConfigureProgramPreview reserves and stages an incoming session's encoder,
+// program and playout generation without seizing the program output. It waits
+// on the director preview bus until a handover cuts it to air.
+func (coordinator *Coordinator) ConfigureProgramPreview(eventID model.EventID, sourceID model.SourceID) error {
+	return coordinator.configureProgram(eventID, sourceID, false)
+}
+
+func (coordinator *Coordinator) configureProgram(eventID model.EventID, sourceID model.SourceID, takeOutput bool) error {
 	event, ok := coordinator.runtime.Events.Get(eventID)
 	if !ok {
 		return fmt.Errorf("event %s not found", eventID)
@@ -83,8 +94,10 @@ func (coordinator *Coordinator) ConfigureProgram(eventID model.EventID, sourceID
 	if err != nil {
 		return err
 	}
-	if err := coordinator.runtime.Mux.Activate(eventID, program.Revision); err != nil {
-		return err
+	if takeOutput {
+		if err := coordinator.runtime.Mux.Activate(eventID, program.Revision); err != nil {
+			return err
+		}
 	}
 	return coordinator.runtime.Playout.Stage(event, sourceID, lease.Fence, "current-program")
 }
@@ -140,6 +153,50 @@ func (coordinator *Coordinator) CommitOnAir(eventID model.EventID, fence uint64)
 	}
 	_, err := coordinator.runtime.EventFlow.MarkOnAir(eventID)
 	return err
+}
+
+// RehearseIncoming prepares a new live session for takeover while another
+// session still holds the output: its signal, encoder, program and playout
+// generation are established on preview and its interlocks satisfied, but the
+// incoming event stays armed and never seizes the output.
+func (coordinator *Coordinator) RehearseIncoming(eventID model.EventID, sourceID model.SourceID) error {
+	event, ok := coordinator.runtime.Events.Get(eventID)
+	if !ok {
+		return fmt.Errorf("event %s not found", eventID)
+	}
+	status, err := coordinator.PrepareSignal(eventID, sourceID)
+	if err != nil {
+		return err
+	}
+	if err := coordinator.ConfirmSignal(sourceID, status.CurrentCommand); err != nil {
+		return err
+	}
+	base := coordinator.runtime.Clock().UTC()
+	for sequence := int64(1); sequence <= 3; sequence++ {
+		frame := model.Frame{
+			Source:           sourceID,
+			SourceGeneration: status.Generation,
+			Sequence:         sequence,
+			Timecode:         2000 + sequence,
+			CapturedAt:       base.Add(time.Duration(sequence) * 20 * time.Millisecond),
+			VideoLocked:      true,
+			AudioLocked:      true,
+		}
+		if err := coordinator.PushFrame(eventID, frame); err != nil {
+			return err
+		}
+	}
+	if err := coordinator.ConfigureProgramPreview(eventID, sourceID); err != nil {
+		return err
+	}
+	if err := coordinator.EstablishInterlocks(eventID); err != nil {
+		return err
+	}
+	event = coordinator.runtime.Events.GetOrZero(eventID)
+	if event.Phase != model.PhaseArmed {
+		return fmt.Errorf("incoming event %s must remain armed, is %s", eventID, event.Phase)
+	}
+	return nil
 }
 
 func (coordinator *Coordinator) ScheduleFailover(ctx context.Context, eventID model.EventID, delay time.Duration) (<-chan error, error) {
