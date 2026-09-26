@@ -10,6 +10,7 @@ import (
 	"github.com/wyw14/solo-035/internal/caption"
 	"github.com/wyw14/solo-035/internal/encoder"
 	"github.com/wyw14/solo-035/internal/event"
+	"github.com/wyw14/solo-035/internal/handoff"
 	"github.com/wyw14/solo-035/internal/journal"
 	"github.com/wyw14/solo-035/internal/mux"
 	"github.com/wyw14/solo-035/internal/playout"
@@ -49,6 +50,9 @@ type Runtime struct {
 	PlayoutRecovery *playout.Recovery
 	BackupState     *backup.State
 	Backup          *backup.Coordinator
+	HandoffState    *handoff.State
+	Handoff         *handoff.Coordinator
+	HandoffSchedule *handoff.Scheduler
 }
 
 func NewRuntime(dataDirectory string, clock func() time.Time) (*Runtime, error) {
@@ -100,5 +104,19 @@ func NewRuntime(dataDirectory string, clock func() time.Time) (*Runtime, error) 
 	if runtime.Backup == nil {
 		return nil, fmt.Errorf("backup coordinator was not constructed")
 	}
+	runtime.HandoffState = handoff.NewState()
+	runtime.Handoff = handoff.NewCoordinator(
+		runtime.HandoffState,
+		runtime.EventFlow,
+		runtime.EncoderFlow,
+		runtime.Mux,
+		runtime.Playout,
+		runtime.Sync,
+		runtime.CaptionFlow,
+		runtime.Continuity,
+		runtime.Quality,
+		clock,
+	)
+	runtime.HandoffSchedule = handoff.NewScheduler()
 	return runtime, nil
 }

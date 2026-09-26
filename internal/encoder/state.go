@@ -57,6 +57,20 @@ func (state *State) Owner(id string) model.EventID {
 	return state.resources[id].Lease.Owner
 }
 
+// LeaseFor returns the live lease currently held by an event, if any. It lets
+// handover cleanup target the specific lease that belongs to the outgoing event
+// without guessing which encoder resource the event bound to.
+func (state *State) LeaseFor(owner model.EventID) (model.EncoderLease, bool) {
+	state.mu.RLock()
+	defer state.mu.RUnlock()
+	for _, resource := range state.resources {
+		if resource.Lease.Owner == owner && resource.Lease.ReleasedAt == nil {
+			return resource.Lease, true
+		}
+	}
+	return model.EncoderLease{}, false
+}
+
 func (state *State) nextFence(id string) uint64 {
 	state.fences[id]++
 	return state.fences[id]

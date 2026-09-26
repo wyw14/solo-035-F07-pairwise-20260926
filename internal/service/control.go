@@ -10,15 +10,18 @@ import (
 )
 
 type ControlRequest struct {
-	Action      string `json:"action"`
-	EventID     string `json:"event_id"`
-	SourceID    string `json:"source_id"`
-	EncoderID   string `json:"encoder_id"`
-	Healthy     bool   `json:"healthy"`
-	Bitrate     int    `json:"bitrate"`
-	Count       int64  `json:"count"`
-	Message     string `json:"message"`
-	DelayMillis int64  `json:"delay_millis"`
+	Action        string `json:"action"`
+	EventID       string `json:"event_id"`
+	SourceID      string `json:"source_id"`
+	EncoderID     string `json:"encoder_id"`
+	HandoverID    string `json:"handover_id"`
+	IncomingName  string `json:"incoming_name"`
+	Healthy       bool   `json:"healthy"`
+	Bitrate       int    `json:"bitrate"`
+	Count         int64  `json:"count"`
+	Message       string `json:"message"`
+	DelayMillis   int64  `json:"delay_millis"`
+	BatonAtMillis int64  `json:"baton_at_millis"`
 }
 
 type ControlResult struct {
@@ -141,7 +144,61 @@ func (runtime *Runtime) ExecuteControl(ctx context.Context, request ControlReque
 		})
 		result.Value = report
 		return result, err
+	case "prepare-handover":
+		incomingSource := sourceID
+		if !incomingSource.Valid() {
+			incomingSource = model.NewSourceID()
+		}
+		batonAt := handoverBatonAt(request, runtime.Clock)
+		h, incoming, err := coordinator.PrepareHandover(eventID, request.IncomingName, incomingSource, batonAt)
+		if err != nil {
+			return result, err
+		}
+		result.Value = map[string]any{"handoff": h, "incoming_event": incoming}
+		return result, nil
+	case "arm-handover":
+		value, err := coordinator.ArmHandover(request.HandoverID)
+		result.Value = value
+		return result, err
+	case "execute-handover":
+		value, err := coordinator.ExecuteHandover(request.HandoverID)
+		result.Value = value
+		return result, err
+	case "schedule-handover":
+		worker, h, err := coordinator.ScheduleHandover(ctx, request.HandoverID)
+		if err != nil {
+			return result, err
+		}
+		if err := <-worker; err != nil {
+			// A deferred cut is an operational outcome, not a rejected command:
+			// report the handoff state so the caller can see it held output.
+			result.Status = "deferred"
+		}
+		final, _ := runtime.Handoff.Get(h.ID)
+		result.Value = final
+		return result, nil
+	case "retry-handover":
+		value, err := coordinator.RetryHandover(request.HandoverID, handoverBatonAt(request, runtime.Clock))
+		result.Value = value
+		return result, err
+	case "cancel-handover":
+		value, err := coordinator.CancelHandover(request.HandoverID)
+		result.Value = value
+		return result, err
 	default:
 		return result, fmt.Errorf("unsupported control action %q", request.Action)
 	}
+}
+
+// handoverBatonAt resolves the requested cut moment: an absolute unix-millis
+// timestamp wins, otherwise a relative delay from now, otherwise immediately.
+func handoverBatonAt(request ControlRequest, clock func() time.Time) time.Time {
+	now := clock().UTC()
+	if request.BatonAtMillis > 0 {
+		return time.UnixMilli(request.BatonAtMillis).UTC()
+	}
+	if request.DelayMillis > 0 {
+		return now.Add(time.Duration(request.DelayMillis) * time.Millisecond)
+	}
+	return now
 }

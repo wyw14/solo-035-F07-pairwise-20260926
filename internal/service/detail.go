@@ -4,6 +4,7 @@ import (
 	"github.com/wyw14/solo-035/internal/audio"
 	"github.com/wyw14/solo-035/internal/backup"
 	"github.com/wyw14/solo-035/internal/caption"
+	"github.com/wyw14/solo-035/internal/handoff"
 	"github.com/wyw14/solo-035/internal/model"
 	"github.com/wyw14/solo-035/internal/mux"
 )
@@ -29,6 +30,7 @@ type OperationalDetail struct {
 	Events   []EventDetail         `json:"events"`
 	Captions []model.CaptionStatus `json:"captions"`
 	Audio    []audio.PathState     `json:"audio_paths"`
+	Handoffs []handoff.Handoff     `json:"handoffs"`
 }
 
 func (runtime *Runtime) Detail() OperationalDetail {
@@ -36,6 +38,7 @@ func (runtime *Runtime) Detail() OperationalDetail {
 		Programs: runtime.Mux.Programs(),
 		Captions: runtime.CaptionFlow.Snapshot(),
 		Audio:    runtime.AudioState.List(),
+		Handoffs: runtime.Handoff.List(),
 	}
 	for _, signal := range runtime.SourceFlow.Snapshot() {
 		detail.Sources = append(detail.Sources, SourceDetail{

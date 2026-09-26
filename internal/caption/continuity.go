@@ -45,3 +45,12 @@ func (continuity *Continuity) Last(eventID model.EventID) (Cue, bool) {
 	cue, ok := continuity.last[eventID]
 	return cue, ok
 }
+
+// Retire drops the cue cursor for an event whose program has handed output
+// away, so a re-armed event starts a fresh revision at sequence one instead of
+// being validated against the previous event's cue stream.
+func (continuity *Continuity) Retire(eventID model.EventID) {
+	continuity.mu.Lock()
+	defer continuity.mu.Unlock()
+	delete(continuity.last, eventID)
+}

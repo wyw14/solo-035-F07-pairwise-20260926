@@ -34,6 +34,25 @@ func (state *State) Failure(eventID model.EventID, revision model.RevisionID, me
 	return status
 }
 
+// Close retires the caption chain that belongs to an event once that event has
+// handed output away. The status is retained under the event id so the close
+// remains attributable to the event that owned the cues, rather than deleting
+// the evidence or reassigning it to the incoming event.
+func (state *State) Close(eventID model.EventID, now time.Time) (model.CaptionStatus, bool) {
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	status, ok := state.statuses[eventID]
+	if !ok {
+		return model.CaptionStatus{}, false
+	}
+	status.Continuous = false
+	status.Closed = true
+	status.EncoderErr = ""
+	status.UpdatedAt = now.UTC()
+	state.statuses[eventID] = status
+	return status, true
+}
+
 func (state *State) Get(eventID model.EventID) (model.CaptionStatus, bool) {
 	state.mu.RLock()
 	defer state.mu.RUnlock()

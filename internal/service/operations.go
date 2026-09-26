@@ -18,6 +18,11 @@ func (runtime *Runtime) Snapshot() model.RuntimeSnapshot {
 			SourceGeneration: event.SourceGeneration,
 			CommandEpoch:     event.CommandEpoch,
 		})
+		// A closed event has handed output away and its caption chain was
+		// intentionally closed, so it no longer contributes live interlocks.
+		if event.Phase == model.PhaseClosed {
+			continue
+		}
 		status, synced := runtime.Sync.Status(event.ID)
 		snapshot.Interlocks = append(snapshot.Interlocks, model.InterlockView{EventID: event.ID, Name: "frame-sync", Passed: synced && status.Stable, Detail: status.Reason})
 		captionStatus, captionKnown := runtime.Captions.Get(event.ID)

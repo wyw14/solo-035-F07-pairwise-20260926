@@ -45,6 +45,7 @@ type CaptionStatus struct {
 	EventID    EventID    `json:"event_id"`
 	Revision   RevisionID `json:"revision"`
 	Continuous bool       `json:"continuous"`
+	Closed     bool       `json:"closed"`
 	EncoderErr string     `json:"encoder_error,omitempty"`
 	UpdatedAt  time.Time  `json:"updated_at"`
 }

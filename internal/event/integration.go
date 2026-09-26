@@ -16,6 +16,10 @@ func NewIntegration(state *State, clock func() time.Time) *Integration {
 	return &Integration{state: state, clock: clock}
 }
 
+func (integration *Integration) Get(id model.EventID) (model.LiveEvent, bool) {
+	return integration.state.Get(id)
+}
+
 func (integration *Integration) Arm(id model.EventID) (model.LiveEvent, error) {
 	event, ok := integration.state.Get(id)
 	if !ok {
@@ -39,6 +43,11 @@ func (integration *Integration) MarkFailedOver(id model.EventID) (model.LiveEven
 
 func (integration *Integration) Hold(id model.EventID) (model.LiveEvent, error) {
 	return integration.state.Transition(id, model.PhaseHolding, integration.clock())
+}
+
+// Close ends an event after it has handed output to its successor.
+func (integration *Integration) Close(id model.EventID) (model.LiveEvent, error) {
+	return integration.state.Transition(id, model.PhaseClosed, integration.clock())
 }
 
 func (integration *Integration) CancelCommand(id model.EventID) (model.LiveEvent, error) {
